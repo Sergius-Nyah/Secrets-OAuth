@@ -25,14 +25,28 @@ app.use(session({
     saveUninitialized: false
 }));
 
-app.use(passport.initialize());
-app.use(passport.session());
+passport.serializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, {
+        id: user.id,
+        username: user.username,
+        picture: user.picture
+      });
+    });
+  });
+  
+  passport.deserializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, user);
+    });
+  });
 
 mongoose.connect("mongodb://localhost:27017/userDB", { useNewUrlParser: true });
 
 const userSchema = new mongoose.Schema({
     username: String,
-    password: String
+    password: String, 
+    secret: String
 });
 userSchema.plugin(passportLocalMongoose);
 userSchema.plugin(findOrCreate); 
@@ -63,6 +77,17 @@ app.get("/register", function(req, res){
         res.render('register');
     }
 });
+app.get("/register", function(req, res){
+    User.find({"secrets":{$ne:null}, function(err, foundUsers){
+        if(err){
+            console.log(err)
+        }else{
+            if(foundUsers){
+                res.render("secrets", {usersWithSecrets: foundUsers});
+            }
+        }
+    }});
+})
 
 app.post('/register', async (req, res) => {
     const newUser = new User({
@@ -79,6 +104,31 @@ app.post('/register', async (req, res) => {
         res.status(500).send('Internal Server Error');
     }
 });
+
+app.get("/submit", function(req, res){
+    if(req.isAuthenticated()){
+        res.render('submit');
+    } else{ 
+        res.redirect('/login');
+    }
+});
+app.post("/submit", function(req, res){
+    const submittedSecret= req.body.secret;
+    console.log(req.user.id);
+
+    User.findById(req.user.id, function(err, foundUser){
+        if(err){
+            console.log(err)
+        }else{
+            if(foundUser){
+                foundUser.secret = submittedSecret;
+                foundUser.save(function(){
+                    res.redirect("/secrets");
+                });
+            }
+        }
+    })
+})
 
 app.post('/login', passport.authenticate("local"), (req, res) => { //cookie. 
     res.redirect("/secrets");
@@ -101,7 +151,7 @@ app.get('/auth/google/secrets',
     // Successful authentication, redirect home.
     res.redirect('/secrets');
   });
-
+ 
 app.get('/login', function (req, res) {
     res.render("login");
 });
